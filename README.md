@@ -1,97 +1,130 @@
-# InkDiary
+# InkDiary 墨水日记
 
-An AI diary companion with stroke-order handwriting animation for Chinese and Latin text on Android.
+一款支持笔画顺序手写动画的 AI 日记伴侣应用，支持中文和英文。
 
-Write on the screen with your finger or stylus. After a pause, your words fade away, and a reply writes itself back — stroke by stroke, following proper writing order — in a flowing hand, then fades away.
+用笔在屏幕上书写，停顿后你的字迹会淡去，一段回复会以正确的笔画顺序一笔一划地浮现，然后慢慢淡去。
 
-No chat UI. Just ink on screen.
+没有聊天界面，只有纸上的墨水。
 
-## Features
+## 功能特性
 
-- **Stroke-order animation** — replies are drawn stroke-by-stroke with correct writing order for both Chinese (via Make Me a Hanzi data) and Latin text (via Zhang-Suen skeletonization)
-- **Configurable AI persona** — default is a warm, sincere friend
-- **Memory-driven growth** — remembers conversations and injects context
-- **Any OpenAI-compatible API** — OpenAI, OpenRouter, Groq, etc.
-- **Three-finger long-press (5s)** — enter config screen
-- **First-launch setup** — auto enters config if no API key
+- **笔画顺序动画** —— 回复内容按正确书写顺序逐笔绘制，中文使用 [Make Me a Hanzi](https://github.com/skishore/makemeahanzi) 数据（笔画顺序经过人工核验），英文使用 Zhang-Suen 骨架细化算法
+- **可配置 AI 人设** —— 默认是一位温暖、真诚的知心朋友，可在设置页自定义
+- **记忆驱动成长** —— 日记会记住你的对话内容并作为上下文注入，随着交流越多越了解你
+- **兼容 OpenAI 接口** —— 支持 OpenAI、OpenRouter、Groq、本地服务器等任何 OpenAI 兼容接口
+- **三指长按 5 秒** —— 在日记页用手势进入设置界面
+- **首次启动引导** —— 未配置 API Key 时自动进入设置页
 
-## How it works
+## 工作原理
 
 ```
-pen/stylus input (MotionEvent, pressure-sensitive)
-   │ strokes
+笔/触控输入 (MotionEvent, 支持压感)
+   │ 笔迹
    ▼
-InkCanvasView ── idle 2.8s → commit page → PNG
+InkCanvasView ── 停顿 2.8 秒 → 提交页面 → PNG
    │
    ▼
-OracleClient (OpenAI-compatible /chat/completions, SSE streaming)
-   │  reads handwriting from PNG (vision LLM)
-   │  streams reply sentence-by-sentence
+OracleClient (OpenAI 兼容 /chat/completions, SSE 流式)
+   │  从 PNG 读取手写内容 (视觉大模型)
+   │  逐句流式返回回复
    ▼
-StrokeAnimator
-   ├── Chinese chars → Make Me a Hanzi SVG paths + medians
-   └── Latin chars  → handwriting font → rasterize → Zhang-Suen thin → trace
+StrokeAnimator 笔画动画引擎
+   ├── 中文字 → Make Me a Hanzi SVG 路径 + medians
+   └── 英文字 → 手写字体 → 栅格化 → Zhang-Suen 细化 → 追踪
    │
-   ▼ stroke-by-stroke animation on canvas
+   ▼ 逐笔动画绘制到画布
 InkCanvasView
 ```
 
-## Building
+### 中文笔画数据：三层回退策略
 
-Requirements: Android Studio Hedgehog+ (AGP 8.1), JDK 17, Android SDK 34.
+| 层级 | 数据来源 | 覆盖范围 | 特点 |
+|---|---|---|---|
+| 第一层 本地 | `hanzi_common.json`（打包进 APK） | ~4000 常用字 | 离线可用，笔顺权威 |
+| 第二层 CDN | jsDelivr `hanzi-writer-data` 按需获取 | 9000+ 字 | 首次联网获取，缓存后离线可用 |
+| 第三层 算法 | Zhang-Suen 细化系统字体 | 任意汉字 | 笔顺启发式（非权威），保证总能动画 |
+
+## 编译构建
+
+环境要求：Android Studio Hedgehog+（AGP 8.1）、JDK 17、Android SDK 34。
 
 ```sh
 git clone https://github.com/la-1314/inkdiary.git
 cd inkdiary
+
+# 1. 下载 Dancing Script 字体
+mkdir -p app/src/main/assets/fonts
+curl -L -o app/src/main/assets/fonts/DancingScript-Regular.ttf \
+  "https://github.com/googlefonts/DancingScript/raw/main/fonts/ttf/DancingScript-Regular.ttf"
+
+# 2. 生成 Gradle Wrapper
+gradle wrapper --gradle-version 8.2
+
+# 3. 编译
 ./gradlew assembleDebug
 ```
 
-### Chinese stroke data
+### 汉字笔画数据
 
-The app ships with a small subset (~80 common characters) in `app/src/main/assets/hanzi_subset.json`. To get the full 9000+ character set:
+应用内置约 80 个常用字的演示数据（`hanzi_subset.json`）。获取完整常用字数据：
 
 ```sh
 bash scripts/download_hanzi_data.sh
 ```
 
-## Configuration
+这会下载 Make Me a Hanzi 的 `graphics.txt` 并生成 `hanzi_common.json`（约 4000 常用字）。
 
-On first launch, the app enters the config screen automatically. Later, use a **three-finger long-press (5 seconds)** on the diary page.
+CI 工作流会自动完成这一步。生僻字在运行时从 CDN 按需获取。
 
-| Field | Description | Default |
+## 配置说明
+
+首次启动自动进入设置页。之后可在日记页**三指长按 5 秒**进入设置。
+
+| 字段 | 说明 | 默认值 |
 |---|---|---|
-| API Key | Your OpenAI-compatible API key | (required) |
-| Base URL | API endpoint | `https://api.openai.com/v1` |
-| Model | Vision-capable model name | `gpt-4o-mini` |
-| Persona | System prompt defining the AI's personality | Warm friend template |
+| API Key | OpenAI 兼容 API 密钥 | （必填）|
+| Base URL | API 端点地址 | `https://api.openai.com/v1` |
+| Model | 支持视觉的模型名 | `gpt-4o-mini` |
+| Persona | 定义 AI 性格的系统提示词 | 温暖朋友模板 |
 
-## Gestures
+内置 OpenAI / OpenRouter / Gemini 一键预设。
 
-| Action | Effect |
+## 手势操作
+
+| 操作 | 效果 |
 |---|---|
-| Write, then lift pen | The diary drinks your ink and a reply appears |
-| Three-finger long-press (5s) | Enter config screen |
-| Tap with 5 fingers | Exit the diary |
+| 书写后抬笔 | 日记吸收墨水并回复 |
+| 三指长按 5 秒 | 进入设置界面 |
+| 五指同时点按 | 退出日记 |
 
-## Tech stack
+## 记忆系统
 
-- **Language**: Kotlin
-- **Min SDK**: 24 (Android 7.0)
-- **Target SDK**: 34
-- **HTTP**: OkHttp 4 (SSE streaming)
-- **Async**: Kotlin Coroutines
-- **UI**: Pure Android Views + Canvas
+每一轮对话都会存储在本地：
+- 你的笔迹（坐标数组）
+- 你写的内容转录（从 LLM 回复解析）
+- AI 的回复文本
 
-## License
+最近 6 轮记忆会注入每次请求的上下文，让日记自然地了解你。
 
-MIT for all code in this repository.
+## 技术栈
 
-- Chinese stroke data: Arphic Public License (from Make Me a Hanzi)
-- Dancing Script font: SIL OFL 1.1 (from Google Fonts)
+- **语言**：Kotlin
+- **最低 SDK**：24（Android 7.0）
+- **目标 SDK**：34
+- **网络**：OkHttp 4（SSE 流式）
+- **异步**：Kotlin Coroutines
+- **UI**：纯 Android Views + Canvas
 
-## Acknowledgments
+## 许可证
 
-- riddle by MaximeRivest — original inspiration
-- Make Me a Hanzi — Chinese stroke data
-- HanziWriter — reference animation implementation
-- Tegaki — Zhang-Suen pipeline reference
+本仓库所有代码使用 MIT 许可证。
+
+- 中文笔画数据：[Arphic Public License](https://github.com/skishore/makemeahanzi/blob/master/APL/ARPHICPL.TXT)（来自 Make Me a Hanzi）
+- Dancing Script 字体：[SIL OFL 1.1](https://scripts.sil.org/OFL)（来自 Google Fonts）
+
+## 致谢
+
+- [riddle](https://github.com/MaximeRivest/riddle) —— 原始灵感来源
+- [Make Me a Hanzi](https://github.com/skishore/makemeahanzi) —— 中文笔画数据
+- [HanziWriter](https://hanziwriter.org) —— 动画参考实现
+- [Tegaki](https://github.com/KurtGokhan/tegaki) —— Zhang-Suen 流水线参考

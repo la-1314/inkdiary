@@ -37,25 +37,35 @@ jobs:
       - name: Download Dancing Script font
         run: |
           mkdir -p app/src/main/assets/fonts
-          curl -L -o app/src/main/assets/fonts/DancingScript-Regular.ttf \
+          curl -L --retry 3 --max-time 60 -o app/src/main/assets/fonts/DancingScript-Regular.ttf \
             "https://github.com/googlefonts/DancingScript/raw/main/fonts/ttf/DancingScript-Regular.ttf"
           ls -lh app/src/main/assets/fonts/
 
       - name: Download Make Me a Hanzi stroke data
         run: |
           mkdir -p tmp
-          curl -L -o tmp/graphics.txt \
+          curl -L --retry 3 --max-time 120 -o tmp/graphics.txt \
             "https://raw.githubusercontent.com/skishore/makemeahanzi/master/graphics.txt"
-          curl -L -o tmp/ARPHICPL.TXT \
-            "https://raw.githubusercontent.com/skishore/makemeahanzi/master/APL/ARPHICPL.TXT"
-          cp tmp/ARPHICPL.TXT app/src/main/assets/ARPHICPL.TXT
-          ls -lh tmp/
+          # Verify download
+          LINE_COUNT=$(wc -l < tmp/graphics.txt)
+          echo "Downloaded $LINE_COUNT lines"
+          if [ "$LINE_COUNT" -lt 1000 ]; then
+            echo "ERROR: graphics.txt too small, download may have failed"
+            exit 1
+          fi
+          curl -L --retry 3 --max-time 30 -o app/src/main/assets/ARPHICPL.TXT \
+            "https://raw.githubusercontent.com/skishore/makemeahanzi/master/APL/ARPHICPL.TXT" || true
+          ls -lh tmp/graphics.txt
 
       - name: Build compact hanzi data (common chars)
         run: |
           python3 scripts/build_hanzi_data.py \
             tmp/graphics.txt \
             app/src/main/assets/hanzi_common.json
+          if [ ! -f app/src/main/assets/hanzi_common.json ]; then
+            echo "ERROR: hanzi_common.json was not created"
+            exit 1
+          fi
           ls -lh app/src/main/assets/hanzi_common.json
 
       - name: Generate Gradle wrapper
