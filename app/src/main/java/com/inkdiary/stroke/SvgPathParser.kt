@@ -29,7 +29,6 @@ object SvgPathParser {
         var curY = 0f
         var startX = 0f
         var startY = 0f
-        var lastCmd = 'M'
 
         while (i < tokens.size) {
             when (tokens[i]) {
@@ -86,7 +85,6 @@ object SvgPathParser {
                 }
             }
             if (i < tokens.size && tokens[i] == 'M') startX = curX; startY = curY
-            lastCmd = tokens[i - 1]
         }
         if (current.isNotEmpty()) subPaths.add(current)
         return subPaths
