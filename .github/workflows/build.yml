@@ -1,0 +1,104 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Download Dancing Script font
+        run: |
+          mkdir -p app/src/main/assets/fonts
+          curl -L -o app/src/main/assets/fonts/DancingScript-Regular.ttf \
+            "https://github.com/googlefonts/DancingScript/raw/main/fonts/ttf/DancingScript-Regular.ttf"
+          ls -lh app/src/main/assets/fonts/
+
+      - name: Download Make Me a Hanzi stroke data
+        run: |
+          mkdir -p tmp
+          curl -L -o tmp/graphics.txt \
+            "https://raw.githubusercontent.com/skishore/makemeahanzi/master/graphics.txt"
+          curl -L -o tmp/ARPHICPL.TXT \
+            "https://raw.githubusercontent.com/skishore/makemeahanzi/master/APL/ARPHICPL.TXT"
+          cp tmp/ARPHICPL.TXT app/src/main/assets/ARPHICPL.TXT
+          ls -lh tmp/
+
+      - name: Build compact hanzi data (common chars)
+        run: |
+          python3 scripts/build_hanzi_data.py \
+            tmp/graphics.txt \
+            app/src/main/assets/hanzi_common.json
+          ls -lh app/src/main/assets/hanzi_common.json
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.2
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: List built APKs
+        run: |
+          find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \;
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkdiary-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkdiary-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Upload hanzi data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hanzi-data
+          path: app/src/main/assets/hanzi_common.json
+          retention-days: 30
+
+      - name: Create GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
