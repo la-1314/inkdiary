@@ -89,8 +89,8 @@ class LatinStrokeProvider(
         // Normalize to 0..1
         return rawStrokes.map { stroke ->
             StrokePath(
-                points = stroke.map { (px, py) ->
-                    (px / size) to (py / size)
+                points = stroke.map { point ->
+                    (point.first / size) to (point.second / size)
                 },
                 width = 4f
             )

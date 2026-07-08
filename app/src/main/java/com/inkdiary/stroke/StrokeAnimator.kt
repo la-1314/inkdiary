@@ -71,8 +71,8 @@ class StrokeAnimator(
         val allStrokes = mutableListOf<List<Pair<Float, Float>>>()
         for (glyph in glyphs) {
             for (stroke in glyph.strokes) {
-                val positioned = stroke.points.map { (nx, ny) ->
-                    (glyph.x + nx * glyph.size) to (glyph.y + ny * glyph.size)
+                val positioned = stroke.points.map { point ->
+                    (glyph.x + point.first * glyph.size) to (glyph.y + point.second * glyph.size)
                 }
                 if (positioned.size >= 2) {
                     allStrokes.add(positioned)

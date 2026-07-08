@@ -127,8 +127,8 @@ class MemoryStore(context: Context) {
         val raw: List<List<Triple<Float, Float, Float>>> = gson.fromJson(file.readText(), type)
         return raw.map { pointList ->
             com.inkdiary.ink.PenStroke(pointList.map { Triple(it.first, it.second, it.third) }
-                .mapIndexed { i, (x, y, p) ->
-                    com.inkdiary.ink.PenStroke.Point(x, y, p, System.currentTimeMillis() + i)
+                .mapIndexed { i, triple ->
+                    com.inkdiary.ink.PenStroke.Point(triple.first, triple.second, triple.third, System.currentTimeMillis() + i)
                 }.toMutableList())
         }
     }
