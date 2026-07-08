@@ -11,8 +11,10 @@ android {
         applicationId = "com.inkdiary"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // Version code & name are injected by CI (env vars VERSION_CODE / VERSION_NAME).
+        // Defaults are used for local builds.
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+        versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
     }
 
     buildTypes {
@@ -22,18 +24,19 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Sign release with the debug key so the APK is installable
+            // directly from GitHub Releases. Replace with a proper signing
+            // config for production distribution.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
     kotlinOptions {
         jvmTarget = "17"
     }
-
     buildFeatures {
         viewBinding = true
     }

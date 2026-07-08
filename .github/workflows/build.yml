@@ -13,10 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -34,6 +35,36 @@ jobs:
         with:
           python-version: '3.x'
 
+      # -------------------------------------------------------------- version
+      # Push to main  -> dev prerelease: versionName = 1.0.0-dev.<run_number>
+      # Push a v* tag -> stable release:  versionName = <tag without v>
+      # versionCode always = run_number (monotonic, for upgrade detection)
+      - name: Compute version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION_NAME="${TAG#v}"
+            echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "is_release_event=true" >> "$GITHUB_OUTPUT"
+          else
+            VERSION_NAME="1.0.0-dev.${GITHUB_RUN_NUMBER}"
+            TAG="v${VERSION_NAME}"
+            echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            # Only create a release on main branch pushes (not PRs)
+            if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+              echo "is_release_event=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "is_release_event=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "version_code=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "==> versionName=$VERSION_NAME  versionCode=$GITHUB_RUN_NUMBER  tag=$TAG"
+
       - name: Download Dancing Script font
         run: |
           mkdir -p app/src/main/assets/fonts
@@ -46,7 +77,6 @@ jobs:
           mkdir -p tmp
           curl -L --retry 3 --max-time 120 -o tmp/graphics.txt \
             "https://raw.githubusercontent.com/skishore/makemeahanzi/master/graphics.txt"
-          # Verify download
           LINE_COUNT=$(wc -l < tmp/graphics.txt)
           echo "Downloaded $LINE_COUNT lines"
           if [ "$LINE_COUNT" -lt 1000 ]; then
@@ -71,44 +101,44 @@ jobs:
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.2
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
       - name: Build release APK
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: List built APKs
         run: |
           find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \;
 
-      - name: Upload debug APK artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: inkdiary-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 30
-
-      - name: Upload release APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: inkdiary-release-apk
+          name: inkdiary-v${{ steps.version.outputs.version_name }}
           path: app/build/outputs/apk/release/*.apk
           retention-days: 30
 
-      - name: Upload hanzi data artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hanzi-data
-          path: app/src/main/assets/hanzi_common.json
-          retention-days: 30
-
-      - name: Create GitHub Release on tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create GitHub Release
+        if: steps.version.outputs.is_release_event == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/debug/*.apk
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: InkDiary ${{ steps.version.outputs.version_name }}
+          body: |
+            ## InkDiary v${{ steps.version.outputs.version_name }}
+
+            | Field | Value |
+            | --- | --- |
+            | Version code | ${{ steps.version.outputs.version_code }} |
+            | Build | #${{ github.run_number }} |
+            | Commit | ${{ github.sha }} |
+            | Type | ${{ steps.version.outputs.prerelease == 'true' && 'Pre-release (dev)' || 'Stable release' }} |
+
+            ### Install
+            Download `app-release.apk` below and install it on your Android device
+            (you may need to enable "Install from unknown sources").
+          files: app/build/outputs/apk/release/*.apk
+          prerelease: ${{ steps.version.outputs.prerelease }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
