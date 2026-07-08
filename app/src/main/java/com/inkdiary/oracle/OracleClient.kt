@@ -4,7 +4,6 @@ import android.util.Base64
 import android.util.Log
 import com.inkdiary.memory.MemoryEntry
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -14,8 +13,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * Calls an OpenAI-compatible /chat/completions endpoint with a vision payload.
@@ -56,13 +53,11 @@ class OracleClient(
         val base64Image = Base64.encodeToString(pngBytes, Base64.NO_WRAP)
 
         val messages = JSONArray()
-
         // System message with persona + memories
         messages.put(JSONObject().apply {
             put("role", "system")
             put("content", persona)
         })
-
         // User message with image
         val content = JSONArray()
         content.put(JSONObject().apply {
@@ -75,7 +70,6 @@ class OracleClient(
                 put("url", "data:image/png;base64,$base64Image")
             })
         })
-
         messages.put(JSONObject().apply {
             put("role", "user")
             put("content", content)
@@ -99,19 +93,22 @@ class OracleClient(
         val response = client.newCall(request).execute()
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
+            response.close()
             throw Exception("Oracle HTTP ${response.code}: $errorBody")
         }
 
         val fullReply = StringBuilder()
-        val source = response.source
-
+        val body = response.body ?: run {
+            response.close()
+            throw Exception("Oracle returned empty body")
+        }
+        val source = body.source()
         try {
             while (!source.exhausted()) {
                 val line = source.readUtf8Line() ?: break
                 if (!line.startsWith("data: ")) continue
                 val data = line.removePrefix("data: ").trim()
                 if (data == "[DONE]") break
-
                 try {
                     val json = JSONObject(data)
                     val choices = json.optJSONArray("choices") ?: continue
