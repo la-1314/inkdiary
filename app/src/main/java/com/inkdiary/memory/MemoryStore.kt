@@ -179,10 +179,9 @@ class MemoryStore(context: Context) {
                     if (rawName.isNotBlank() && !rawName.endsWith("/")) {
                         val outFile = File(memDir, rawName)
                         outFile.parentFile?.mkdirs()
-                        outFile.outputStream().use { zip.copyTo(it) }
+                        outFile.outputStream().use { out -> zip.copyTo(out) }
                     }
-                    entry = zip.closeEntry()
-                    zip.nextEntry
+                    entry = zip.nextEntry
                 }
             }
             loadIndex()
