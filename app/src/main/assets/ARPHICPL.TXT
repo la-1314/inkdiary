@@ -1,0 +1,15 @@
+Arphic Public License
+
+Copyright (C) 1999 Arphic Technology Co., Ltd.
+
+All rights reserved except as specified below.
+
+Everyone is permitted to copy and distribute verbatim copies of this license
+document, but changing it is not allowed.
+
+This license applies to the Chinese stroke data derived from Make Me a Hanzi
+(https://github.com/skishore/makemeahanzi), which uses Arphic PL KaitiM GB and
+Arphic PL UKai fonts as the source of glyph outlines.
+
+The full text of the Arphic Public License is available at:
+https://github.com/skishore/makemeahanzi/blob/master/APL/ARPHICPL.TXT
