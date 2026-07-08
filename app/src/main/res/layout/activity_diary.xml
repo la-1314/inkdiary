@@ -3,14 +3,12 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/paper_white">
-
     <com.inkdiary.ink.InkCanvasView
-        android:id="+id/inkCanvas"
+        android:id="@+id/inkCanvas"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
-
     <TextView
-        android:id="+id/tvHint"
+        android:id="@+id/tvHint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
@@ -18,9 +16,8 @@
         android:text="@string/diary_hint"
         android:textColor="@color/ink_faded"
         android:textSize="18sp" />
-
     <ProgressBar
-        android:id="+id/progressGesture"
+        android:id="@+id/progressGesture"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="120dp"
         android:layout_height="120dp"
@@ -30,5 +27,4 @@
         android:max="100"
         android:progress="0"
         android:visibility="invisible" />
-
 </FrameLayout>
