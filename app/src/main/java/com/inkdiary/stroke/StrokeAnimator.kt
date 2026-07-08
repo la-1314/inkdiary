@@ -1,11 +1,13 @@
 package com.inkdiary.stroke
 
+import android.content.Context
 import android.content.res.AssetManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.inkdiary.ink.InkCanvasView
-import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The unified stroke animation engine.
@@ -19,18 +21,18 @@ import java.io.File
  */
 class StrokeAnimator(
     private val canvasView: InkCanvasView,
+    private val context: Context,
     private val assets: AssetManager,
     private val fontPath: String
 ) {
     companion object {
         private const val TAG = "StrokeAnimator"
-        private const val GLYPH_SIZE = 80f   // px per glyph
-        private const val LINE_HEIGHT = 100f  // px per line
+        private const val GLYPH_SIZE = 80f
+        private const val LINE_HEIGHT = 100f
         private const val MARGIN = 40f
         private const val MAX_LINE_WIDTH = 1000f
-        private const val STROKE_DURATION_MS = 300L  // per stroke
-        private const val STROKE_GAP_MS = 50L        // between strokes
-        private const val CHAR_GAP_MS = 100L         // between characters
+        private const val STROKE_DURATION_MS = 300L
+        private const val STROKE_GAP_MS = 50L
         private const val FRAME_MS = 16L
     }
 
@@ -38,10 +40,19 @@ class StrokeAnimator(
     private var cancelled = false
 
     private val chineseProvider: ChineseStrokeProvider by lazy {
-        ChineseStrokeProvider(assets, File(canvasView.context.filesDir.absolutePath))
+        ChineseStrokeProvider(context, assets, context.filesDir)
     }
     private val latinProvider: LatinStrokeProvider by lazy {
         LatinStrokeProvider(assets, fontPath)
+    }
+
+    /**
+     * Prefetch stroke data for any rare characters in [text] that aren't in
+     * the local bundle. Must be called on a background thread before
+     * [animateReply] to avoid UI stalls for uncommon characters.
+     */
+    suspend fun prefetch(text: String) {
+        chineseProvider.prefetch(text)
     }
 
     /**
@@ -51,14 +62,12 @@ class StrokeAnimator(
     fun animateReply(text: String, onComplete: () -> Unit) {
         cancelled = false
 
-        // Get layout for all characters
         val glyphs = layoutText(text)
         if (glyphs.isEmpty()) {
             onComplete()
             return
         }
 
-        // Collect all stroke segments with absolute positions
         val allStrokes = mutableListOf<List<Pair<Float, Float>>>()
         for (glyph in glyphs) {
             for (stroke in glyph.strokes) {
@@ -72,14 +81,12 @@ class StrokeAnimator(
         }
 
         if (allStrokes.isEmpty()) {
+            Log.w(TAG, "No strokes generated for reply: '${text.take(40)}...'" )
             onComplete()
             return
         }
 
-        // Set up canvas with all stroke paths
         canvasView.setAnimStrokes(allStrokes)
-
-        // Animate each stroke
         animateStrokes(allStrokes, 0, onComplete)
     }
 
@@ -107,7 +114,6 @@ class StrokeAnimator(
                 canvasView.updateAnimStrokeProgress(index, progress)
 
                 if (currentPoint >= totalPoints) {
-                    // Move to next stroke after a gap
                     handler.postDelayed({
                         animateStrokes(strokes, index + 1, onComplete)
                     }, STROKE_GAP_MS)
@@ -119,10 +125,6 @@ class StrokeAnimator(
         handler.post(frameRunnable)
     }
 
-    /**
-     * Lay out text into glyphs with positions.
-     * Simple word-wrap: breaks lines at MAX_LINE_WIDTH.
-     */
     private fun layoutText(text: String): List<GlyphLayout> {
         val result = mutableListOf<GlyphLayout>()
         var x = MARGIN
@@ -144,6 +146,12 @@ class StrokeAnimator(
                 continue
             }
 
+            // Skip emoji and symbols that can't be rendered as strokes
+            if (!isRenderable(char)) {
+                Log.d(TAG, "Skipping unrenderable char: U+${char.code.toString(16)}")
+                continue
+            }
+
             val provider = getProvider(char)
             val strokes = provider.getStrokes(char)
 
@@ -151,10 +159,8 @@ class StrokeAnimator(
                 result.add(GlyphLayout(strokes, x, y, GLYPH_SIZE))
             }
 
-            // Advance x
             x += if (isCJK(char)) GLYPH_SIZE else GLYPH_SIZE * 0.6f
 
-            // Word wrap
             if (x > MAX_LINE_WIDTH) {
                 x = MARGIN
                 y += LINE_HEIGHT
@@ -164,12 +170,22 @@ class StrokeAnimator(
         return result
     }
 
+    /**
+     * Whether a character can be rendered as handwriting strokes.
+     * Excludes emoji, pictographs, and most symbols.
+     */
+    private fun isRenderable(char: Char): Boolean {
+        val code = char.code
+        // CJK Unified Ideographs (incl. Extension A)
+        if (code in 0x4E00..0x9FFF || code in 0x3400..0x4DBF) return true
+        // Latin, digits, common punctuation
+        if (code < 0x2500) return char.isDefined() && !char.isISOControl()
+        // Everything else (emoji, symbols, box drawing, etc.) → skip
+        return false
+    }
+
     private fun getProvider(char: Char): StrokeProvider {
-        return if (chineseProvider.supports(char)) {
-            chineseProvider
-        } else {
-            latinProvider
-        }
+        return if (chineseProvider.supports(char)) chineseProvider else latinProvider
     }
 
     private fun isCJK(char: Char): Boolean {

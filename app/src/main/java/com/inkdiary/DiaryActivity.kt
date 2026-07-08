@@ -4,7 +4,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -26,7 +25,6 @@ import com.inkdiary.stroke.StrokeAnimator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 
@@ -39,8 +37,7 @@ class DiaryActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "DiaryActivity"
         private const val IDLE_COMMIT_MS = 2800L
-        private const val ORACLE_TIMEOUT_MS = 120_000L
-        private val FONT_PATH = "fonts/DancingScript.ttf"
+        private val FONT_PATH = "fonts/DancingScript-Regular.ttf"
     }
 
     private lateinit var inkCanvas: InkCanvasView
@@ -85,7 +82,7 @@ class DiaryActivity : AppCompatActivity() {
 
         oracleClient = OracleClient(config.apiKey, config.baseUrl, config.model)
         memoryStore = MemoryStore(this)
-        strokeAnimator = StrokeAnimator(inkCanvas, assets, FONT_PATH)
+        strokeAnimator = StrokeAnimator(inkCanvas, this, assets, FONT_PATH)
 
         tvHint.visibility = View.VISIBLE
         inkCanvas.onStrokeStart = {
@@ -133,9 +130,11 @@ class DiaryActivity : AppCompatActivity() {
                 // Fade out user ink
                 inkCanvas.fadeOutInk()
 
+                // Prefetch rare characters before animating
+                strokeAnimator.prefetch(reply)
+
                 // Animate reply stroke by stroke
                 strokeAnimator.animateReply(reply) {
-                    // After animation completes, store memory and reset
                     val transcript = extractTranscript(reply)
                     memoryStore.add(MemoryEntry(
                         transcript = transcript,
@@ -162,9 +161,6 @@ class DiaryActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Render the current strokes to a PNG file for the vision LLM.
-     */
     private fun renderStrokesToPng(strokes: List<PenStroke>): File {
         val w = inkCanvas.width.coerceAtLeast(1)
         val h = inkCanvas.height.coerceAtLeast(1)
@@ -181,10 +177,6 @@ class DiaryActivity : AppCompatActivity() {
         return file
     }
 
-    /**
-     * Extract the user's transcribed text from the LLM reply.
-     * The oracle appends a structured transcript at the end.
-     */
     private fun extractTranscript(reply: String): String {
         val marker = "[TRANSCRIPT]"
         val idx = reply.lastIndexOf(marker)
