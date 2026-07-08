@@ -29,11 +29,12 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * The main diary screen. Handles pen input, idle detection, oracle calls,
- * and stroke-by-stroke reply animation.
+ * The main diary screen. Every exchange is stored permanently. Every
+ * [MemoryStore.MEMORY_UPDATE_INTERVAL] exchanges, the AI refreshes
+ * memory.md, which is then injected into the system prompt (instead of
+ * raw conversation history).
  */
 class DiaryActivity : AppCompatActivity() {
-
     companion object {
         private const val TAG = "DiaryActivity"
         private const val IDLE_COMMIT_MS = 2800L
@@ -43,12 +44,10 @@ class DiaryActivity : AppCompatActivity() {
     private lateinit var inkCanvas: InkCanvasView
     private lateinit var tvHint: TextView
     private lateinit var progressGesture: ProgressBar
-
     private lateinit var config: ConfigStore.Config
     private lateinit var oracleClient: OracleClient
     private lateinit var memoryStore: MemoryStore
     private lateinit var strokeAnimator: StrokeAnimator
-
     private val handler = Handler(Looper.getMainLooper())
     private val idleRunnable = Runnable { commitPage() }
     private var isProcessing = false
@@ -68,7 +67,6 @@ class DiaryActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_diary)
-
         inkCanvas = findViewById(R.id.inkCanvas)
         tvHint = findViewById(R.id.tvHint)
         progressGesture = findViewById(R.id.progressGesture)
@@ -104,14 +102,10 @@ class DiaryActivity : AppCompatActivity() {
         startActivity(Intent(this, ConfigActivity::class.java))
     }
 
-    /**
-     * User paused writing → commit the page as PNG and send to oracle.
-     */
     private fun commitPage() {
         if (isProcessing) return
         val strokes = inkCanvas.getStrokes()
         if (strokes.isEmpty()) return
-
         isProcessing = true
         tvHint.visibility = View.VISIBLE
         tvHint.text = "…"
@@ -119,21 +113,18 @@ class DiaryActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val pngFile = renderStrokesToPng(strokes)
+                val personaPrompt = Persona.buildSystemPrompt(
+                    persona = config.persona,
+                    memoryMd = memoryStore.getMemoryMd()
+                )
                 val reply = withContext(Dispatchers.IO) {
                     oracleClient.ask(
                         pngPath = pngFile.absolutePath,
-                        persona = Persona.buildSystemPrompt(config.persona),
-                        memories = memoryStore.getRecent(6)
+                        persona = personaPrompt
                     )
                 }
-
-                // Fade out user ink
                 inkCanvas.fadeOutInk()
-
-                // Prefetch rare characters before animating
                 strokeAnimator.prefetch(reply)
-
-                // Animate reply stroke by stroke
                 strokeAnimator.animateReply(reply) {
                     val transcript = extractTranscript(reply)
                     memoryStore.add(MemoryEntry(
@@ -141,6 +132,9 @@ class DiaryActivity : AppCompatActivity() {
                         reply = reply,
                         strokes = strokes
                     ))
+                    if (memoryStore.shouldUpdateMemory()) {
+                        refreshMemoryMd()
+                    }
                     handler.postDelayed({
                         inkCanvas.clear()
                         tvHint.visibility = View.VISIBLE
@@ -148,7 +142,6 @@ class DiaryActivity : AppCompatActivity() {
                         isProcessing = false
                     }, 3000L)
                 }
-
             } catch (e: Exception) {
                 Log.e(TAG, "Oracle call failed", e)
                 tvHint.text = "(something went wrong…)"
@@ -161,6 +154,30 @@ class DiaryActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Ask the model to refresh memory.md from the most recent exchanges.
+     * Runs in the background; failures are logged but never block the UI.
+     */
+    private fun refreshMemoryMd() {
+        lifecycleScope.launch {
+            try {
+                val recent = withContext(Dispatchers.IO) {
+                    memoryStore.getRecent(MemoryStore.MEMORY_UPDATE_INTERVAL)
+                }
+                val updated = oracleClient.summarizeMemory(
+                    currentMemoryMd = memoryStore.getMemoryMd(),
+                    recentExchanges = recent
+                )
+                if (updated.isNotBlank()) {
+                    memoryStore.updateMemoryMd(updated)
+                    Log.i(TAG, "memory.md refreshed (${updated.length} chars)")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Memory refresh failed (will retry next cycle)", e)
+            }
+        }
+    }
+
     private fun renderStrokesToPng(strokes: List<PenStroke>): File {
         val w = inkCanvas.width.coerceAtLeast(1)
         val h = inkCanvas.height.coerceAtLeast(1)
@@ -168,7 +185,6 @@ class DiaryActivity : AppCompatActivity() {
         val canvas = Canvas(bmp)
         canvas.drawColor(Color.WHITE)
         inkCanvas.renderStrokesToCanvas(canvas, strokes)
-
         val file = File(cacheDir, "diary_page.png")
         FileOutputStream(file).use { out ->
             bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
