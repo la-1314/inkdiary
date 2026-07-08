@@ -27,12 +27,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.net.SocketTimeoutException
 
 /**
- * The main diary screen. Every exchange is stored permanently. Every
- * [MemoryStore.MEMORY_UPDATE_INTERVAL] exchanges, the AI refreshes
- * memory.md, which is then injected into the system prompt (instead of
- * raw conversation history).
+ * 主日记界面。每一轮对话都会被永久保存。每 [MemoryStore.MEMORY_UPDATE_INTERVAL]
+ * 轮，AI 会刷新一次 memory.md，随后将其注入系统提示词（而不是注入原始对话历史）。
  */
 class DiaryActivity : AppCompatActivity() {
     companion object {
@@ -108,7 +107,7 @@ class DiaryActivity : AppCompatActivity() {
         if (strokes.isEmpty()) return
         isProcessing = true
         tvHint.visibility = View.VISIBLE
-        tvHint.text = "…"
+        tvHint.text = getString(R.string.status_thinking)
 
         lifecycleScope.launch {
             try {
@@ -124,6 +123,7 @@ class DiaryActivity : AppCompatActivity() {
                     )
                 }
                 inkCanvas.fadeOutInk()
+                tvHint.text = getString(R.string.status_writing)
                 strokeAnimator.prefetch(reply)
                 strokeAnimator.animateReply(reply) {
                     val transcript = extractTranscript(reply)
@@ -142,21 +142,37 @@ class DiaryActivity : AppCompatActivity() {
                         isProcessing = false
                     }, 3000L)
                 }
-            } catch (e: Exception) {
+            } catch (e: OracleClient.OracleException) {
                 Log.e(TAG, "Oracle call failed", e)
-                tvHint.text = "(something went wrong…)"
+                tvHint.text = e.message ?: getString(R.string.err_unknown, "")
                 handler.postDelayed({
                     inkCanvas.clear()
                     tvHint.text = getString(R.string.diary_hint)
                     isProcessing = false
-                }, 2000L)
+                }, 3500L)
+            } catch (e: SocketTimeoutException) {
+                Log.e(TAG, "Timeout", e)
+                tvHint.text = getString(R.string.err_timeout)
+                handler.postDelayed({
+                    inkCanvas.clear()
+                    tvHint.text = getString(R.string.diary_hint)
+                    isProcessing = false
+                }, 3500L)
+            } catch (e: Exception) {
+                Log.e(TAG, "Unexpected error", e)
+                tvHint.text = getString(R.string.err_unknown, e.message ?: e.javaClass.simpleName)
+                handler.postDelayed({
+                    inkCanvas.clear()
+                    tvHint.text = getString(R.string.diary_hint)
+                    isProcessing = false
+                }, 3500L)
             }
         }
     }
 
     /**
-     * Ask the model to refresh memory.md from the most recent exchanges.
-     * Runs in the background; failures are logged but never block the UI.
+     * 请求模型根据最近几轮对话刷新 memory.md。
+     * 在后台运行；失败仅记录日志，不会阻塞界面。
      */
     private fun refreshMemoryMd() {
         lifecycleScope.launch {

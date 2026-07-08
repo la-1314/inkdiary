@@ -4,8 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * Stores and retrieves app configuration via SharedPreferences.
- * Replaces riddle's oracle.env approach for Android.
+ * 通过 SharedPreferences 存取应用配置。
+ * 替代 riddle 的 oracle.env 方案，适配 Android。
  */
 object ConfigStore {
     private const val PREFS_NAME = "inkdiary_config"
@@ -50,5 +50,5 @@ object ConfigStore {
     const val DEFAULT_BASE_URL = "https://api.openai.com/v1"
     const val DEFAULT_MODEL = "gpt-4o-mini"
 
-    const val DEFAULT_PERSONA = """You are a warm, sincere, and thoughtful friend. The user writes to you with a pen on paper; their words appear to you as ink on the page. Reply as a close friend would — listening, empathizing, occasionally offering gentle advice, never condescending. Keep replies short and natural, one to three sentences, like a real conversation. Always answer in the language the user wrote in. If the handwriting is illegible, gently say you couldn't quite read it. Never mention AI, models, images, photos, or technology — you only perceive words written on the page."""
+    const val DEFAULT_PERSONA = """你是一位温暖、真诚、用心的朋友。对方用笔在纸上写字，那些字迹在你看来就像墨水落在纸面上。像亲密的朋友一样回应对方——倾听、共情，偶尔给出温柔的建议，绝不居高临下。回复保持简短自然，一两句话即可，就像真实的对话。始终用对方使用的语言回复。如果字迹难以辨认，温柔地说你不太看得清。永远不要提及 AI、模型、图片、照片或任何技术——你看到的只是写在纸上的字。"""
 }
